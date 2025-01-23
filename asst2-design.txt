@@ -1,0 +1,50 @@
+For the assignment, we have a file descriptor table per process and one shared 
+open file table storing open files? information.
+
+For the file descriptor table, we declared an array of FDTable_entry of size 
+open_max inside Proc struct in proc.h as every process needs to have its own 
+private fd table. Each entry has a pointer to our open file table. We 
+initialised the file descriptor table entries to NULL in the proc_create() 
+inside proc.c since this function starts the process for the kernel as the 
+entries do not have references to any open file yet.
+
+Our Open file array is a pointer that points to OPEN_MAX number of open file 
+structs declared in file.h. Each entry for the open file table has a reference 
+to its corresponding vnode, a file pointer/offset to the current position 
+within the file, flags and a ref_count to count the number of file descriptors 
+that point that particular entry. Since the open file table needs to be 
+global/shared between processes, we declared it in file.h and initialised the 
+memory for it using kmalloc inside the boot function in main.c where the kernel 
+is being initialised. So this way the open file table is located on the heap 
+where multiple processes can access it.
+
+We decided to allocate our fd statically with a size of OPEN_MAX. The reason 
+behind this is that malloc is not very fast as it needs to find a block of 
+memory with the correct size. So allocating the fd table statically seems more 
+reasonable than the need to malloc and free every time. Also, static allocation 
+can be useful for caching performance as the entries are located next to each 
+other in physical memory while with malloc the blocks are distributed.
+Also for the fd table, performance is much better as access is O(1) to find the 
+relevant open file entry given an fd number.
+These data structures allow us to manage the relationship between file 
+descriptors and open files and the operations they are allowed to perform. One 
+of the issues surrounding this is that we need to re-assign each entry to some 
+values that represent they are free and can be used again. We also need to be 
+aware when we need to increment/decrement the ref count in of entries as we 
+used them to determine if an entry in the open file table is free or not or 
+whether we can call vop_close in sys_close to close the particular vnode.
+
+We also need to be careful not to corrupt the kernel by using user level data 
+without any sanity checking to make sure the data is not corrupt. For example, 
+we used copyinstr to copy the file name from user level stack to kernel level. 
+This function does all the necessary checkings to make sure the address is 
+valid and does not corrupt the kernel.
+
+The design of our data structures also allows for multiple processes to run in 
+case the fork() was implemented. Since our fd table is declared and initialised 
+per process, multiple processes will be able to have their own fd table that 
+has access to one shared open file table. The concurrency issues that fork 
+would introduce is when multiple processes try to access and modify the entries 
+in the open file table at the same time. So then we would need to implement 
+some synchronisation primitives to only allow one process at a time to have 
+access to the open file table.
